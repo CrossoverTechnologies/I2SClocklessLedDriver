@@ -125,6 +125,10 @@ extern clock_speed clock800Khz;
     #include "soc/gpio_struct.h"
     #include "esp_rom_sys.h"
   #endif
+  // IDF6: I2S1 is no longer a shared peripheral module; its bus clock and reset go through the I2S LL.
+  #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+    #include "hal/i2s_ll.h"
+  #endif
 
 #endif
 
@@ -293,7 +297,9 @@ class I2SClocklessLedDriver {
   const int deviceBaseIndex[2] = {I2S0O_DATA_OUT0_IDX, I2S1O_DATA_OUT0_IDX};
   const int deviceClockIndex[2] = {I2S0O_BCK_OUT_IDX, I2S1O_BCK_OUT_IDX};
   const int deviceWordSelectIndex[2] = {I2S0O_WS_OUT_IDX, I2S1O_WS_OUT_IDX};
+  #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
   const periph_module_t deviceModule[2] = {PERIPH_I2S0_MODULE, PERIPH_I2S1_MODULE};
+  #endif
 #endif
 
  public:
@@ -398,7 +404,11 @@ class I2SClocklessLedDriver {
     for (int i = 0; i < numStrips; i++) {
       PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[pins[i]], PIN_FUNC_GPIO);
       gpio_set_direction((gpio_num_t)pins[i], (gpio_mode_t)GPIO_MODE_DEF_OUTPUT);
+  #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+      gpio_matrix_output((gpio_num_t)pins[i], deviceBaseIndex[I2S_DEVICE] + i + 8, false, false);
+  #else
       gpio_matrix_out(pins[i], deviceBaseIndex[I2S_DEVICE] + i + 8, false, false);
+  #endif
     }
 #elif CONFIG_IDF_TARGET_ESP32S3
     for (int i = 0; i < numStrips; i++) {
@@ -543,12 +553,26 @@ class I2SClocklessLedDriver {
     int interruptSource;
     if (I2S_DEVICE == 0) {
       i2s = &I2S0;
+  #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+      PERIPH_RCC_ATOMIC() {
+        i2s_ll_enable_bus_clock(0, true);
+        i2s_ll_reset_register(0);
+      }
+  #else
       periph_module_enable(PERIPH_I2S0_MODULE);
+  #endif
       interruptSource = ETS_I2S0_INTR_SOURCE;
       i2sBasePinIndex = I2S0O_DATA_OUT0_IDX;
     } else {
       i2s = &I2S1;
+  #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+      PERIPH_RCC_ATOMIC() {
+        i2s_ll_enable_bus_clock(1, true);
+        i2s_ll_reset_register(1);
+      }
+  #else
       periph_module_enable(PERIPH_I2S1_MODULE);
+  #endif
       interruptSource = ETS_I2S1_INTR_SOURCE;
       i2sBasePinIndex = I2S1O_DATA_OUT0_IDX;
     }
